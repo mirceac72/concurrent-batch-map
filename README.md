@@ -68,4 +68,24 @@ and there will be an arbitrary number of `put` operations.
 - A `completeBatch` can finish only after the previous `completeBatch` 
 finished and all the changes from the previous batch were incorporated.
 
+In order to align the thread performing `completeBatch` with the
+threads modifying the `writeMap`, a 
+[Phaser](https://docs.oracle.com/en/java/javase/21/docs/api/java.base/java/util/concurrent/Phaser.html)
+barrier will be used. We need a phaser because we do not know how many threads we have
+to synchronize at the moment when the barrier is created. Each batch will use
+its own `Phaser` instance that will be created on `beginBatch`. `beginBatch` will
+also register to the `Phaser` instance of the previous batch in order to wait
+until all changes made by the previous batch were incorporated.
+As expected, `completeBatch` will wait until all threads registered to the `Phaser`
+instance associated with the batch have arrived and the `writeMap` will be set
+as the new `readMap` within the Phaser `onActivate` method call.
+
+`volatile` specifier is used for `readMap`, `writeMap` and `phaser` fields from
+`LowBlockingBatchMap`. This establishes a 
+[happens-before](https://docs.oracle.com/javase/specs/jls/se21/html/jls-17.html#jls-17.4.5) 
+relation between the operations writing these fields and the subsequent reads. 
+
+Methods `beginBatch`, `put`, `completeBatch` make local copies of the shared references like
+`writeMap` and `phaser` within the `synchronized` sections and use these copies afterward
+in order to do not be impacted by other threads concurrently changing these references.
 
